@@ -1,11 +1,14 @@
 import { getMockConfig as getMockConfigUntyped } from 'expo-router/build/testing-library/mock-config';
 
+import { resolveStaticHeaders } from '../../serve/static';
 import type { ExpoRouterRuntimeManifest } from '../../start/server/metro/MetroBundlerDevServer';
 import {
+  deriveLoaderHeaders,
   getExactPathNamedRegex,
   getHtmlFiles,
   getPathVariations,
   getFilesToExportFromServerAsync,
+  mergeLoaderHeaderRules,
 } from '../exportStaticAsync';
 
 // `getMockConfig` returns a structurally-close subset of the runtime manifest (it omits the
@@ -406,6 +409,89 @@ describe(getFilesToExportFromServerAsync, () => {
     });
 
     expect([...files.keys()]).toEqual(['(a)/index.html', '(b)/index.html']);
+  });
+});
+
+describe(deriveLoaderHeaders, () => {
+  it('defaults a headerless loader response to the SSG revalidation policy', () => {
+    const headers = deriveLoaderHeaders(new Headers());
+
+    expect(headers).toEqual({ 'Cache-Control': 'public, max-age=0, must-revalidate' });
+  });
+
+  it('prefers a loader-declared Cache-Control over the SSG default', () => {
+    const headers = deriveLoaderHeaders(new Headers({ 'Cache-Control': 'public, max-age=3600' }));
+
+    expect(headers).toEqual({ 'Cache-Control': 'public, max-age=3600' });
+  });
+});
+
+describe(mergeLoaderHeaderRules, () => {
+  const userRule = { namedRegex: '^/_expo/loaders/custom(?:/)?$', headers: { 'X-User': 'yes' } };
+  const derivedRule = {
+    namedRegex: '^/_expo/loaders/second(?:/)?$',
+    headers: { 'Cache-Control': 'no-store' },
+  };
+
+  it('prepends the server-mode loader default so user-configured rules override it', () => {
+    const merged = mergeLoaderHeaderRules([userRule], {
+      addBlanketDefault: true,
+      defaultLoaderRules: [],
+      declaredLoaderRules: [derivedRule],
+    });
+
+    expect(merged).toEqual([
+      { namedRegex: '^/_expo/loaders/.+$', headers: { 'Cache-Control': 'no-store' } },
+      userRule,
+      derivedRule,
+    ]);
+  });
+
+  // Resolved with `resolveStaticHeaders` so precedence reflects the hosts' later-rule-wins logic.
+  describe('resolved against host rule semantics', () => {
+    const USER_RULE = {
+      namedRegex: '^/_expo/loaders/foo(?:/)?$',
+      headers: { 'Cache-Control': 'private, max-age=60' },
+    };
+
+    function resolveForPath(rules: { namedRegex: string; headers: any }[], pathname: string) {
+      return resolveStaticHeaders(
+        {
+          pageHeaders: rules.map((rule) => ({ ...rule, namedRegex: new RegExp(rule.namedRegex) })),
+          redirects: [],
+        } as any,
+        pathname
+      );
+    }
+
+    it('lets a user-configured rule override the synthesized headerless default', () => {
+      const merged = mergeLoaderHeaderRules([USER_RULE], {
+        addBlanketDefault: true,
+        defaultLoaderRules: [
+          { namedRegex: '^/_expo/loaders/foo(?:/)?$', headers: deriveLoaderHeaders(new Headers()) },
+        ],
+        declaredLoaderRules: [],
+      });
+
+      expect(resolveForPath(merged, '/_expo/loaders/foo')['cache-control']).toBe(
+        'private, max-age=60'
+      );
+    });
+
+    it('lets a loader-declared header override a user-configured rule', () => {
+      const merged = mergeLoaderHeaderRules([USER_RULE], {
+        addBlanketDefault: true,
+        defaultLoaderRules: [],
+        declaredLoaderRules: [
+          {
+            namedRegex: '^/_expo/loaders/foo(?:/)?$',
+            headers: deriveLoaderHeaders(new Headers({ 'Cache-Control': 'no-store' })),
+          },
+        ],
+      });
+
+      expect(resolveForPath(merged, '/_expo/loaders/foo')['cache-control']).toBe('no-store');
+    });
   });
 });
 

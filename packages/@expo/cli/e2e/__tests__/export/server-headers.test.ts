@@ -28,6 +28,11 @@ const PAGE_HEADERS = [
 ];
 
 const EXPECTED_PAGE_HEADERS = [
+  // The headerless-loader default is prepended so user rules for loader paths can override it.
+  {
+    namedRegex: '^/_expo/loaders/.+$',
+    headers: { 'Cache-Control': 'no-store' },
+  },
   {
     namedRegex: '^/(?:/)?$',
     headers: { 'X-Page-Rule': 'index', 'X-Powered-By': 'page-override' },

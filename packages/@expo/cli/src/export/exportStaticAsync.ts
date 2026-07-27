@@ -87,6 +87,53 @@ function matchGroupName(name: string): string | undefined {
   return name.match(/^\(([^/]+?)\)$/)?.[1];
 }
 
+const SSG_LOADER_DEFAULT_CACHE_CONTROL = 'public, max-age=0, must-revalidate';
+
+const SERVER_LOADER_DEFAULT_HEADER_RULE: PageHeaderInfo<string> = {
+  namedRegex: '^/_expo/loaders/.+$',
+  headers: { 'Cache-Control': 'no-store' },
+};
+
+/** Loader-declared headers over the SSG revalidation default. */
+export function deriveLoaderHeaders(responseHeaders: Headers): Record<string, string> {
+  const headers: Record<string, string> = {
+    'Cache-Control': SSG_LOADER_DEFAULT_CACHE_CONTROL,
+  };
+  for (const name of SSG_LOADER_HEADER_ALLOWLIST) {
+    const value = responseHeaders.get(name);
+    if (value) {
+      headers[name] = value;
+    }
+  }
+  return headers;
+}
+
+type LoaderHeaderEntry = { headers: Record<string, string>; declared: boolean };
+
+/**
+ * Build the `pageHeaders` rule list for loader headers. Defaults precede user-configured rules so
+ * user configuration overrides them; loader-declared rules come last so the data owner wins.
+ */
+export function mergeLoaderHeaderRules(
+  pageHeaders: PageHeaderInfo<string>[] | undefined,
+  {
+    addBlanketDefault,
+    defaultLoaderRules,
+    declaredLoaderRules,
+  }: {
+    addBlanketDefault: boolean;
+    defaultLoaderRules: PageHeaderInfo<string>[];
+    declaredLoaderRules: PageHeaderInfo<string>[];
+  }
+): PageHeaderInfo<string>[] {
+  return [
+    ...(addBlanketDefault ? [SERVER_LOADER_DEFAULT_HEADER_RULE] : []),
+    ...defaultLoaderRules,
+    ...(pageHeaders ?? []),
+    ...declaredLoaderRules,
+  ];
+}
+
 export async function getFilesToExportFromServerAsync(
   projectRoot: string,
   {
@@ -242,8 +289,8 @@ export async function exportFromServerAsync(
 
   // Group variations prerender several pathnames from one loader file, so these maps can differ
   // in size.
-  const loaderHeadersByPage = new Map<string, Record<string, string>>();
-  const loaderHeadersByFile = new Map<string, Record<string, string>>();
+  const loaderHeadersByPage = new Map<string, LoaderHeaderEntry>();
+  const loaderHeadersByFile = new Map<string, LoaderHeaderEntry>();
 
   await getFilesToExportFromServerAsync(projectRoot, {
     files,
@@ -272,20 +319,15 @@ export async function exportFromServerAsync(
             loaderId: loaderKey,
           });
 
-          const declaredHeaders: Record<string, string> = {};
-          for (const name of SSG_LOADER_HEADER_ALLOWLIST) {
-            const value = loaderResponse.headers.get(name);
-            if (value) {
-              declaredHeaders[name] = value;
-            }
-          }
-          if (Object.keys(declaredHeaders).length) {
-            loaderHeadersByPage.set(normalizedPathname, declaredHeaders);
-            // NOTE(@hassankhan): Last-write-wins when concurrent group
-            // variations share a loader file; fine for SSG as loaders don't get
-            // a `request` and will produce identical headers.
-            loaderHeadersByFile.set(`/${fileSystemPath}`, declaredHeaders);
-          }
+          const loaderHeaders: LoaderHeaderEntry = {
+            headers: deriveLoaderHeaders(loaderResponse.headers),
+            declared: SSG_LOADER_HEADER_ALLOWLIST.some((name) => loaderResponse.headers.has(name)),
+          };
+          loaderHeadersByPage.set(normalizedPathname, loaderHeaders);
+          // NOTE(@hassankhan): Last-write-wins when concurrent group
+          // variations share a loader file; fine for SSG as loaders don't get
+          // a `request` and will produce identical headers.
+          loaderHeadersByFile.set(`/${fileSystemPath}`, loaderHeaders);
 
           renderOpts.loader = { data, key: loaderKey };
         }
@@ -315,14 +357,21 @@ export async function exportFromServerAsync(
     },
   });
 
-  const loaderHeaderRules = [
-    ...toLoaderRules(loaderHeadersByPage),
-    ...toLoaderRules(loaderHeadersByFile),
+  const defaultLoaderRules = [
+    ...toLoaderRules(loaderHeadersByPage, { declared: false }),
+    ...toLoaderRules(loaderHeadersByFile, { declared: false }),
+  ];
+  const declaredLoaderRules = [
+    ...toLoaderRules(loaderHeadersByPage, { declared: true }),
+    ...toLoaderRules(loaderHeadersByFile, { declared: true }),
   ];
 
-  // Appended after any pre-existing rules so the loader-declared values win.
-  if (loaderHeaderRules.length) {
-    serverManifest.pageHeaders = [...(serverManifest.pageHeaders ?? []), ...loaderHeaderRules];
+  if (defaultLoaderRules.length || declaredLoaderRules.length) {
+    serverManifest.pageHeaders = mergeLoaderHeaderRules(serverManifest.pageHeaders, {
+      addBlanketDefault: false,
+      defaultLoaderRules,
+      declaredLoaderRules,
+    });
   }
 
   if (!exportServer) {
@@ -371,12 +420,16 @@ export async function exportFromServerAsync(
       files.set(route, contents);
     }
 
-    // Add any loader-declared headers
-    if (loaderHeaderRules.length) {
+    const useServerLoaders = !!exp?.extra?.router?.unstable_useServerDataLoaders;
+    if (useServerLoaders || defaultLoaderRules.length || declaredLoaderRules.length) {
       updateExportManifestInFiles({
         files,
         callback: (manifest) => {
-          manifest.pageHeaders = [...(manifest.pageHeaders ?? []), ...loaderHeaderRules];
+          manifest.pageHeaders = mergeLoaderHeaderRules(manifest.pageHeaders, {
+            addBlanketDefault: useServerLoaders,
+            defaultLoaderRules,
+            declaredLoaderRules,
+          });
         },
       });
     }
@@ -390,7 +443,6 @@ export async function exportFromServerAsync(
       });
 
       // Export loader bundles for routes that have loader exports
-      const useServerLoaders = exp?.extra?.router?.unstable_useServerDataLoaders;
       if (useServerLoaders) {
         // Get `loaderReferences` from client bundle metadata to determine which routes have loaders
         const loaderReferences = resources.artifacts?.flatMap(
@@ -853,11 +905,15 @@ export function getExactPathNamedRegex(pathname: string): string {
  * Converts headers keyed by pathname into exact-match `pageHeaders` rules, sorted for
  * deterministic manifest output.
  */
-function toLoaderRules(rulesByPath: Map<string, Record<string, string>>): PageHeaderInfo<string>[] {
+function toLoaderRules(
+  rulesByPath: Map<string, LoaderHeaderEntry>,
+  { declared }: { declared: boolean }
+): PageHeaderInfo<string>[] {
   return [...rulesByPath.entries()]
+    .filter(([, entry]) => entry.declared === declared)
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-    .map(([pathname, headers]) => ({
+    .map(([pathname, entry]) => ({
       namedRegex: getExactPathNamedRegex(pathname),
-      headers,
+      headers: entry.headers,
     }));
 }
