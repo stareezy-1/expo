@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import http from 'node:http';
 import path from 'node:path';
 
 import {
@@ -226,6 +227,39 @@ describe.each(
   });
 
   (server.isExpoStart ? it.skip : it)(
+    'applies the SSG default Cache-Control to a headerless loader',
+    async () => {
+      const response = await server.fetchAsync('/_expo/loaders/index');
+
+      expect(response.status).toBe(200);
+      expect(response.headers.get('cache-control')).toBe('public, max-age=0, must-revalidate');
+    }
+  );
+
+  (server.isExpoStart ? it.skip : it)(
+    'conditionally revalidates an unchanged headerless loader with 304',
+    async () => {
+      const first = await server.fetchAsync('/_expo/loaders/index');
+      const etag = first.headers.get('etag');
+      expect(first.status).toBe(200);
+      expect(etag).toBeTruthy();
+
+      const revisitStatus = await getRawStatus(new URL('/_expo/loaders/index', server.url), {
+        'If-None-Match': etag!,
+      });
+
+      expect(revisitStatus).toBe(304);
+    }
+  );
+
+  it('passes a loader-declared no-store through verbatim', async () => {
+    const response = await server.fetchAsync('/_expo/loaders/second');
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('cache-control')).toBe('no-store');
+  });
+
+  (server.isExpoStart ? it.skip : it)(
     'applies loader-declared `Cache-Control` to the pre-rendered page',
     async () => {
       const response = await server.fetchAsync('/response');
@@ -235,21 +269,45 @@ describe.each(
   );
 
   (server.isExpoStart ? it.skip : it)(
-    'writes loader-declared `Cache-Control` rules to the manifest subset',
+    'writes loader and page `Cache-Control` rules to the manifest subset',
     () => {
       const routesJson = JSON.parse(
         fs.readFileSync(path.join(server.outputDir, '_expo/.routes.json'), 'utf8')
       );
-      expect(routesJson.pageHeaders).toEqual([
-        {
-          namedRegex: '^/response(?:/)?$',
-          headers: { 'Cache-Control': 'public, max-age=604800' },
-        },
-        {
-          namedRegex: '^/_expo/loaders/response(?:/)?$',
-          headers: { 'Cache-Control': 'public, max-age=604800' },
-        },
-      ]);
+      const findRule = (namedRegex: string) =>
+        routesJson.pageHeaders.find(
+          (rule: { namedRegex: string }) => rule.namedRegex === namedRegex
+        );
+
+      expect(findRule('^/(?:/)?$')).toEqual({
+        namedRegex: '^/(?:/)?$',
+        headers: { 'Cache-Control': 'public, max-age=0, must-revalidate' },
+      });
+      expect(findRule('^/_expo/loaders/index(?:/)?$')).toEqual({
+        namedRegex: '^/_expo/loaders/index(?:/)?$',
+        headers: { 'Cache-Control': 'public, max-age=0, must-revalidate' },
+      });
+
+      expect(routesJson.pageHeaders).toEqual(
+        expect.arrayContaining([
+          {
+            namedRegex: '^/response(?:/)?$',
+            headers: { 'Cache-Control': 'public, max-age=604800' },
+          },
+          {
+            namedRegex: '^/_expo/loaders/response(?:/)?$',
+            headers: { 'Cache-Control': 'public, max-age=604800' },
+          },
+          {
+            namedRegex: '^/second(?:/)?$',
+            headers: { 'Cache-Control': 'no-store' },
+          },
+          {
+            namedRegex: '^/_expo/loaders/second(?:/)?$',
+            headers: { 'Cache-Control': 'no-store' },
+          },
+        ])
+      );
     }
   );
 
@@ -279,3 +337,14 @@ describe.each(
     }
   );
 });
+
+/** Issue a conditional GET with a raw http request, bypassing the retrying fetch helper. */
+function getRawStatus(url: URL, headers: Record<string, string>): Promise<number | undefined> {
+  return new Promise((resolve, reject) => {
+    const request = http.get(url, { headers }, (response) => {
+      response.resume();
+      response.on('end', () => resolve(response.statusCode));
+    });
+    request.on('error', reject);
+  });
+}

@@ -60,7 +60,7 @@ test.describe('static loaders in production', () => {
     expect(JSON.parse(loaderDataContent!)).toEqual({ params: { postId: 'static-post-1' } });
   });
 
-  test('caches loader data for subsequent navigations', async ({ page }) => {
+  test('revalidates headerless loader data on every fresh mount', async ({ page }) => {
     const loaderRequests: string[] = [];
     page.on('request', (request) => {
       if (request.url().includes('/_expo/loaders/')) {
@@ -83,8 +83,9 @@ test.describe('static loaders in production', () => {
     await page.click('a[href="/posts/static-post-1"]');
     await page.waitForSelector('[data-testid="loader-result"]');
 
-    // Should not make additional requests for cached static-post-1
-    expect(loaderRequests.length).toBe(2);
+    // Every fresh mount fetches (the SSG default is `max-age=0, must-revalidate`, answered
+    // 304 by the host): 2× static-post-1, 1× static-post-2, and 2× index revisits.
+    expect(loaderRequests).toHaveLength(5);
   });
 
   test('handles loader module fetch errors gracefully', async ({ page }) => {
