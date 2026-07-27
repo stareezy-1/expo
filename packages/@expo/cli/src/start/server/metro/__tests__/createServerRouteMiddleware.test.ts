@@ -1,6 +1,23 @@
 import type { MiddlewareMatcher } from 'expo-server';
 
+import { applyDevLoaderCacheControlDefault } from '../createServerRouteMiddleware';
 import { warnInvalidMiddlewareMatcherSettings } from '../router';
+
+describe(applyDevLoaderCacheControlDefault, () => {
+  it('defaults a headerless loader response to no-store', () => {
+    const response = applyDevLoaderCacheControlDefault(Response.json({ data: 'headerless' }));
+
+    expect(response.headers.get('Cache-Control')).toBe('no-store');
+  });
+
+  it('preserves a loader-declared Cache-Control header', () => {
+    const response = applyDevLoaderCacheControlDefault(
+      Response.json({ data: 'declared' }, { headers: { 'Cache-Control': 'public, max-age=3600' } })
+    );
+
+    expect(response.headers.get('Cache-Control')).toBe('public, max-age=3600');
+  });
+});
 
 describe(warnInvalidMiddlewareMatcherSettings, () => {
   const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});

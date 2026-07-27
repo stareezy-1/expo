@@ -50,7 +50,28 @@ export function createMetroMiddleware(
   };
 }
 
-const noCacheMiddleware: connect.NextHandleFunction = (_req, res, next) => {
+// Dev HMR appends this param to loader URLs to bust the browser's HTTP cache. Strip it so it
+// never reaches loader code via `request.url`.
+const LOADER_CACHE_BUST_PARAM = '_expo_loader_v';
+
+function stripLoaderCacheBustParam(url: string): string {
+  const queryIndex = url.indexOf('?');
+  if (queryIndex === -1) {
+    return url;
+  }
+  const params = new URLSearchParams(url.slice(queryIndex + 1));
+  params.delete(LOADER_CACHE_BUST_PARAM);
+  const query = params.toString();
+  return query ? `${url.slice(0, queryIndex)}?${query}` : url.slice(0, queryIndex);
+}
+
+const noCacheMiddleware: connect.NextHandleFunction = (req, res, next) => {
+  // Loader responses carry their own `Cache-Control`, so declared caching stays observable in dev.
+  if (req.url?.startsWith('/_expo/loaders/')) {
+    req.url = stripLoaderCacheBustParam(req.url);
+    return next();
+  }
+
   res.setHeader('Surrogate-Control', 'no-store');
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
   res.setHeader('Pragma', 'no-cache');
