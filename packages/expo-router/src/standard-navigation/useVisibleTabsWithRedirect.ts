@@ -8,6 +8,7 @@ import {
   useIsFocused,
 } from '../react-navigation/native';
 import { useBuildHref } from './useBuildHref';
+import { orderRoutesByRouteNames } from '../utils/orderRoutesByRouteNames';
 
 type TabRoute = NavigationRoute<ParamListBase, string>;
 
@@ -22,12 +23,14 @@ type TabDescriptor<Options extends object> = {
  */
 export function useVisibleTabsWithRedirect<Route extends TabRoute, Options extends object>({
   routes,
+  routeNames,
   focusedRouteKey,
   descriptors,
   redirectToRouteName,
   isHidden,
 }: {
   routes: Route[];
+  routeNames: string[];
   focusedRouteKey: string;
   descriptors: Record<string, TabDescriptor<Options>>;
   redirectToRouteName?: string;
@@ -38,13 +41,13 @@ export function useVisibleTabsWithRedirect<Route extends TabRoute, Options exten
 
   const visibleRoutes = useMemo(
     () =>
-      routes.filter((route) => {
+      orderRoutesByRouteNames(routes, routeNames).filter((route) => {
         // Every filesystem route is registered in state; only routes declared by a non-hidden
         // trigger become tab items.
         const descriptor = descriptors[route.key];
         return isDeclaredInLayout(descriptor) && !isHidden?.(descriptor?.options);
       }),
-    [routes, descriptors, isHidden]
+    [routes, routeNames, descriptors, isHidden]
   );
   const visibleFocusedIndex = useMemo(
     () => visibleRoutes.findIndex((route) => route.key === focusedRouteKey),

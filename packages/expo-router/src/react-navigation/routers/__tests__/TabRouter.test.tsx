@@ -572,12 +572,15 @@ test('gets state on route names change', () => {
     key: 'tab-test',
     routeNames: ['qux', 'baz', 'foo', 'fiz'],
     routes: [
-      { key: 'qux-test', name: 'qux', params: { name: 'Jane' } },
       { key: 'baz-test', name: 'baz', params: { answer: 42 } },
+      { key: 'qux-test', name: 'qux', params: { name: 'Jane' } },
       { key: 'foo-test', name: 'foo' },
       { key: 'fiz-test', name: 'fiz', params: { fruit: 'apple' } },
     ],
-    history: [{ type: 'route', key: 'qux-test' }],
+    history: [
+      { type: 'route', key: 'qux-test' },
+      { type: 'route', key: 'baz-test' },
+    ],
     stale: false,
     type: 'tab',
     preloadedRouteKeys: [],
@@ -610,7 +613,7 @@ test('gets state on route names change', () => {
     key: 'tab-test',
     routeNames: ['foo', 'fiz'],
     routes: [
-      { key: 'foo-test', name: 'foo' },
+      { key: 'foo-test', name: 'foo', params: undefined },
       { key: 'fiz-test', name: 'fiz' },
     ],
     history: [{ type: 'route', key: 'foo-test' }],
@@ -650,16 +653,19 @@ test('preserves focused route on route names change', () => {
       }
     )
   ).toEqual({
-    index: 3,
+    index: 0,
     key: 'tab-test',
     routeNames: ['qux', 'foo', 'fiz', 'baz'],
     routes: [
-      { key: 'qux-test', name: 'qux', params: { name: 'Jane' } },
-      { key: 'foo-test', name: 'foo' },
-      { key: 'fiz-test', name: 'fiz', params: { fruit: 'apple' } },
       { key: 'baz-test', name: 'baz', params: { answer: 42 } },
+      { key: 'qux-test', name: 'qux', params: { name: 'Jane' } },
+      { key: 'foo-test', name: 'foo', params: undefined },
+      { key: 'fiz-test', name: 'fiz', params: { fruit: 'apple' } },
     ],
-    history: [{ type: 'route', key: 'baz-test' }],
+    history: [
+      { type: 'route', key: 'qux-test' },
+      { type: 'route', key: 'baz-test' },
+    ],
     stale: false,
     type: 'tab',
     preloadedRouteKeys: [],

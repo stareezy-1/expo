@@ -332,7 +332,7 @@ export function BottomTabBar({ state, descriptors, emitter, navigateToTab, inset
       </View>
       <View role="tablist" style={sidebar ? styles.sideContent : styles.bottomContent}>
         {routes.map((route, index) => {
-          const focused = index === state.index;
+          const focused = route.key === focusedRoute.key;
           const { options } = descriptors[route.key]!;
 
           const onPress = () => {

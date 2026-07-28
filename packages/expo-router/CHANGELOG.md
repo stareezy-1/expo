@@ -35,6 +35,7 @@
 
 ### 💡 Others
 
+- Refactor headless tabs not to rely on `routeNames` ([#48257](https://github.com/expo/expo/pull/48257) by [@Ubax](https://github.com/Ubax))
 - Integrate native stack with standard navigation ([#48114](https://github.com/expo/expo/pull/48114) by [@Ubax](https://github.com/Ubax))
 - Refactor native-stack for compliance with standard-navigation integration ([#46592](https://github.com/expo/expo/pull/46592) by [@Ubax](https://github.com/Ubax))
 - Remove the deprecated static-navigation API from `expo-router/react-navigation`. ([#48071](https://github.com/expo/expo/pull/48071) by [@Ubax](https://github.com/Ubax))

@@ -12,6 +12,7 @@ import type {
 import { BottomTabView } from '../views/BottomTabView';
 
 export interface BottomTabNavigatorCreateProps {
+  routeNames: string[];
   preloadedRouteKeys: string[];
   popNestedStackToTop: (routeKey: string) => void;
 }
@@ -31,6 +32,7 @@ function BottomTabNavigatorContent({
   descriptors,
   actions,
   emitter,
+  routeNames,
   preloadedRouteKeys,
   popNestedStackToTop,
   ...rest
@@ -51,6 +53,7 @@ function BottomTabNavigatorContent({
     <BottomTabView
       {...rest}
       state={state}
+      routeNames={routeNames}
       // TODO(@ubax): SDK-58: Try to remove the casting from here to ensure type safety
       // Integration supplies full descriptors, including preload placeholders; standard types omit route/navigation.
       descriptors={descriptors as unknown as BottomTabDescriptorMap}

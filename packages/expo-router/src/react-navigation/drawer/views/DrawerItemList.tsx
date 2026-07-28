@@ -1,6 +1,7 @@
 'use client';
 import * as React from 'react';
 
+import { orderRoutesByRouteNames } from '../../../utils/orderRoutesByRouteNames';
 import {
   CommonActions,
   DrawerActions,
@@ -34,8 +35,8 @@ export function DrawerItemList({ state, navigation, descriptors }: Props) {
     drawerInactiveBackgroundColor,
   } = focusedOptions;
 
-  return state.routes.map((route, i) => {
-    const focused = i === state.index;
+  return orderRoutesByRouteNames(state.routes, state.routeNames).map((route) => {
+    const focused = route.key === focusedRoute.key;
 
     const onPress = () => {
       const event = navigation.emit({

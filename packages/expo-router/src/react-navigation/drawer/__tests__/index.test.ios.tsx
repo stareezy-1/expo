@@ -1,6 +1,6 @@
 import 'react-native-gesture-handler/jestSetup';
 import { userEvent } from '@testing-library/react-native';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Button, Text, View } from 'react-native';
 import { Drawer as DrawerLayout } from 'react-native-drawer-layout';
 
@@ -51,6 +51,38 @@ test('renders a drawer navigator and navigates between screens', () => {
 
   expect(screen.getByTestId('second')).toBeVisible();
   expect(screen).toHavePathname('/second');
+});
+
+test('renders drawer items in route names order while preserving focus', () => {
+  let reverse!: () => void;
+
+  function Layout() {
+    const [reversed, setReversed] = useState(false);
+    reverse = () => setReversed(true);
+    const screens = [
+      <Drawer.Screen key="index" name="index" options={{ drawerLabel: 'Index item' }} />,
+      <Drawer.Screen key="second" name="second" options={{ drawerLabel: 'Second item' }} />,
+    ];
+    return <Drawer>{reversed ? screens.reverse() : screens}</Drawer>;
+  }
+
+  renderRouter(
+    {
+      _layout: Layout,
+      index: () => null,
+      second: () => <View testID="second" />,
+    },
+    { initialUrl: '/second' }
+  );
+
+  act(reverse);
+
+  const items = screen.getAllByRole('button', { name: /item/ });
+  expect(items[0]!.props.accessibilityState).toEqual({ selected: true });
+  expect(items[0]).toHaveTextContent('Second item');
+  expect(items[1]!.props.accessibilityState).toEqual({ selected: false });
+  expect(items[1]).toHaveTextContent('Index item');
+  expect(screen.getByTestId('second')).toBeVisible();
 });
 
 test('handles drawer actions and preventable item presses', async () => {

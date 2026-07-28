@@ -1,3 +1,6 @@
+import { useMemo } from 'react';
+
+import { orderRoutesByRouteNames } from '../../../utils/orderRoutesByRouteNames';
 import {
   CommonActions,
   type ParamListBase,
@@ -44,6 +47,17 @@ export function MaterialTopTabView({
 }: Props) {
   const { colors } = useTheme();
   const { direction } = useLocale();
+  const orderedState = useMemo(() => {
+    const routes = orderRoutesByRouteNames(state.routes, state.routeNames);
+    if (routes === state.routes) {
+      return state;
+    }
+    const index = Math.max(
+      0,
+      routes.findIndex((route) => route.key === state.routes[state.index]!.key)
+    );
+    return { ...state, routes, index };
+  }, [state]);
 
   const renderTabBar: React.ComponentProps<any>['renderTabBar'] = ({
     /* eslint-disable @typescript-eslint/no-unused-vars */
@@ -54,20 +68,20 @@ export function MaterialTopTabView({
   }: any) => {
     return tabBar({
       ...rest,
-      state,
+      state: orderedState,
       navigation,
       descriptors,
     });
   };
 
-  const focusedOptions = descriptors[state.routes[state.index]!.key]!.options;
+  const focusedOptions = descriptors[orderedState.routes[orderedState.index]!.key]!.options;
 
   return (
     <TabView<Route<string>>
       {...rest}
       onIndexChange={(index: number) => {
         navigation.dispatch({
-          ...CommonActions.navigate(state.routes[index]!),
+          ...CommonActions.navigate(orderedState.routes[index]!),
           target: state.key,
         });
       }}
@@ -76,7 +90,7 @@ export function MaterialTopTabView({
           {descriptors[route.key]!.render()}
         </TabAnimationContext.Provider>
       )}
-      navigationState={state}
+      navigationState={orderedState}
       renderTabBar={renderTabBar}
       renderLazyPlaceholder={({ route }: any) =>
         descriptors[route.key]!.options.lazyPlaceholder?.() ?? null
@@ -92,7 +106,7 @@ export function MaterialTopTabView({
       onSwipeEnd={() => navigation.emit({ type: 'swipeEnd' })}
       direction={direction}
       options={Object.fromEntries(
-        state.routes.map((route) => {
+        orderedState.routes.map((route) => {
           const options = descriptors[route.key]?.options;
 
           return [

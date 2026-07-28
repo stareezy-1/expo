@@ -3,6 +3,7 @@ import * as React from 'react';
 import { Animated, Platform, StyleSheet } from 'react-native';
 import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
 
+import { orderRoutesByRouteNames } from '../../../utils/orderRoutesByRouteNames';
 import { getHeaderTitle, Header, SafeAreaProviderCompat, Screen } from '../../elements';
 import { type ParamListBase } from '../../native';
 import { FadeTransition, ShiftTransition } from '../TransitionConfigs/TransitionPresets';
@@ -24,6 +25,7 @@ import { MaybeScreen, MaybeScreenContainer } from './ScreenFallback';
 
 type Props = BottomTabNavigationConfig & {
   state: BottomTabViewState;
+  routeNames: string[];
   descriptors: BottomTabDescriptorMap;
   emitter: BottomTabEmitter;
   navigateToTab: (routeKey: string) => void;
@@ -66,6 +68,7 @@ export function BottomTabView(props: Props) {
   const {
     tabBar = renderTabBarDefault,
     state,
+    routeNames,
     descriptors,
     emitter,
     navigateToTab,
@@ -78,6 +81,11 @@ export function BottomTabView(props: Props) {
   } = props;
 
   const focusedRouteKey = state.routes[state.index]!.key;
+  const tabBarState = React.useMemo(() => {
+    const routes = orderRoutesByRouteNames(state.routes, routeNames);
+    const index = routes.findIndex((route) => route.key === focusedRouteKey);
+    return routes === state.routes ? state : { ...state, routes, index };
+  }, [focusedRouteKey, routeNames, state]);
 
   /**
    * List of loaded tabs, tabs will be loaded when navigated to.
@@ -181,7 +189,7 @@ export function BottomTabView(props: Props) {
       <SafeAreaInsetsContext.Consumer>
         {(insets) =>
           tabBar({
-            state,
+            state: tabBarState,
             descriptors,
             emitter,
             navigateToTab,

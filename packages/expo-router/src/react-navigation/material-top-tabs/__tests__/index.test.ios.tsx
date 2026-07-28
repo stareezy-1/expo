@@ -1,10 +1,16 @@
 import { expect, jest, test } from '@jest/globals';
-import { fireEvent, render } from '@testing-library/react-native';
-import { Button, View } from 'react-native';
+import { act, fireEvent, render } from '@testing-library/react-native';
+import { useState } from 'react';
+import { Button, Text as NativeText, View } from 'react-native';
 
 import { NavigationContainer } from '../../../fork/NavigationContainer';
 import { Text } from '../../elements';
-import { createMaterialTopTabNavigator, type MaterialTopTabScreenProps } from '../index';
+import type { Route } from '../../native';
+import {
+  createMaterialTopTabNavigator,
+  type MaterialTopTabBarProps,
+  type MaterialTopTabScreenProps,
+} from '../index';
 
 type TopTabParamList = {
   A: undefined;
@@ -89,5 +95,55 @@ test('renders a material top tab navigator with screens', async () => {
 
   fireEvent(await findByText('Go to B'), 'press');
 
+  expect(queryByText('Screen B')).not.toBeNull();
+});
+
+test('renders tabs in route names order while preserving focus', async () => {
+  const Tab = createMaterialTopTabNavigator<TopTabParamList>();
+  let reverse!: () => void;
+
+  function TestNavigator() {
+    const [reversed, setReversed] = useState(false);
+    reverse = () => setReversed(true);
+    const screens = [
+      <Tab.Screen key="A" name="A">
+        {({ navigation }) => (
+          <View>
+            <Text>Screen A</Text>
+            <Button title="Go to B" onPress={() => navigation.navigate('B')} />
+          </View>
+        )}
+      </Tab.Screen>,
+      <Tab.Screen key="B" name="B">
+        {() => <Text>Screen B</Text>}
+      </Tab.Screen>,
+    ];
+    return (
+      <Tab.Navigator
+        tabBar={({ state }: MaterialTopTabBarProps) => (
+          <View>
+            {state.routes.map((route: Route<string>, index: number) => (
+              <NativeText key={route.key} testID={`tab-${index}`}>
+                {route.name}:{route.key === state.routes[state.index]!.key ? 'focused' : 'blurred'}
+              </NativeText>
+            ))}
+          </View>
+        )}>
+        {reversed ? screens.reverse() : screens}
+      </Tab.Navigator>
+    );
+  }
+
+  const { findByText, getByTestId, queryByText } = render(
+    <NavigationContainer>
+      <TestNavigator />
+    </NavigationContainer>
+  );
+
+  fireEvent(await findByText('Go to B'), 'press');
+  act(reverse);
+
+  expect(getByTestId('tab-0')).toHaveTextContent('B:focused');
+  expect(getByTestId('tab-1')).toHaveTextContent('A:blurred');
   expect(queryByText('Screen B')).not.toBeNull();
 });
