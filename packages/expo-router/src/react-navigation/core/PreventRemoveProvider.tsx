@@ -11,102 +11,111 @@ import { type PreventedRoutes, PreventRemoveContext } from './PreventRemoveConte
 
 type Props = {
   children: React.ReactNode;
+  isRoutePreventedRef: React.MutableRefObject<IsRoutePrevented>;
 };
+
+export type IsRoutePrevented = (routeKey: string) => boolean;
 
 type PreventedRouteEntry = {
   routeKey: string;
   preventRemove: boolean;
 };
 
-type PreventedRoutesMap = Map<string, PreventedRouteEntry>;
-
-/**
- * Util function to transform map of prevented routes to a simpler object.
- */
 const transformPreventedRoutes = (entries: PreventedRouteEntry[]): PreventedRoutes => {
-  const preventedRoutes = entries.reduce<PreventedRoutes>((acc, { routeKey, preventRemove }) => {
-    acc[routeKey] = {
-      preventRemove: acc[routeKey]?.preventRemove || preventRemove,
+  return entries.reduce<PreventedRoutes>((result, { routeKey, preventRemove }) => {
+    result[routeKey] = {
+      preventRemove: result[routeKey]?.preventRemove || preventRemove,
     };
-    return acc;
+    return result;
   }, {});
-
-  return preventedRoutes;
 };
 
 /**
- * Component used for managing which routes have to be prevented from removal in native-stack.
+ * Component used for exposing removal prevention state to navigator views.
  */
-export function PreventRemoveProvider({ children }: Props) {
+export function PreventRemoveProvider({ children, isRoutePreventedRef }: Props) {
   'use no memo';
   const [parentId] = React.useState(() => nanoid());
-  const [preventedRoutesMap, setPreventedRoutesMap] = React.useState<PreventedRoutesMap>(
-    () => new Map()
-  );
+  const entriesRef = React.useRef(new Map<string, PreventedRouteEntry>());
+  const [entries, setEntries] = React.useState(entriesRef.current);
 
   const navigation = use(NavigationHelpersContext);
   const route = use(NavigationRouteContext);
+  const parentContext = use(PreventRemoveContext);
+  const setParentPrevented = parentContext?.setPreventRemove;
 
-  const preventRemoveContextValue = use(PreventRemoveContext);
-  // take `setPreventRemove` from parent context - if exist it means we're in a nested context
-  const setParentPrevented = preventRemoveContextValue?.setPreventRemove;
-
-  // TODO(@ubax): RN Migration - For some reason this breaks with react compiler
   const setPreventRemove = useLatestCallback(
     (id: string, routeKey: string, preventRemove: boolean): void => {
       if (
         preventRemove &&
         (navigation == null ||
-          navigation?.getState().routes.every((route) => route.key !== routeKey))
+          navigation.getState().routes.every((route) => route.key !== routeKey))
       ) {
         throw new Error(
           `Couldn't find a route with the key ${routeKey}. Is your component inside NavigationContent?`
         );
       }
 
-      setPreventedRoutesMap((prevPrevented) => {
-        // values haven't changed - do nothing
-        if (
-          routeKey === prevPrevented.get(id)?.routeKey &&
-          preventRemove === prevPrevented.get(id)?.preventRemove
-        ) {
-          return prevPrevented;
-        }
+      const previous = entriesRef.current;
+      const existing = previous.get(id);
+      if (
+        (!preventRemove && existing === undefined) ||
+        (existing?.routeKey === routeKey && existing.preventRemove === preventRemove)
+      ) {
+        return;
+      }
 
-        const nextPrevented = new Map(prevPrevented);
+      const next = new Map(previous);
+      if (preventRemove) {
+        next.set(id, { routeKey, preventRemove: true });
+      } else {
+        next.delete(id);
+      }
+      entriesRef.current = next;
+      setEntries(next);
 
-        if (preventRemove) {
-          nextPrevented.set(id, {
-            routeKey,
-            preventRemove,
-          });
-        } else {
-          nextPrevented.delete(id);
-        }
-
-        return nextPrevented;
-      });
+      if (route?.key !== undefined && setParentPrevented !== undefined) {
+        const state = navigation?.getState();
+        const hasActiveEntry = [...next.values()].some(
+          (entry) => entry.preventRemove && !isRoutePreloadedInStack(state, { key: entry.routeKey })
+        );
+        setParentPrevented(parentId, route.key, hasActiveEntry);
+      }
     }
   );
 
-  const navigationState = navigation?.getState();
+  const state = navigation?.getState();
   const activeEntries = React.useMemo(
     () =>
-      [...preventedRoutesMap.values()].filter(
-        ({ routeKey }) => !isRoutePreloadedInStack(navigationState, { key: routeKey })
+      [...entries.values()].filter(
+        ({ routeKey }) => !isRoutePreloadedInStack(state, { key: routeKey })
       ),
-    [navigationState, preventedRoutesMap]
+    [entries, state]
   );
   const isPrevented = activeEntries.some(({ preventRemove }) => preventRemove);
 
+  const isRoutePrevented = useLatestCallback((routeKey: string) =>
+    [...entriesRef.current.values()].some(
+      (entry) =>
+        entry.routeKey === routeKey &&
+        entry.preventRemove &&
+        !isRoutePreloadedInStack(navigation?.getState(), { key: routeKey })
+    )
+  );
+
+  React.useLayoutEffect(() => {
+    isRoutePreventedRef.current = isRoutePrevented;
+    return () => {
+      if (isRoutePreventedRef.current === isRoutePrevented) {
+        isRoutePreventedRef.current = () => false;
+      }
+    };
+  }, [isRoutePrevented, isRoutePreventedRef]);
+
   React.useEffect(() => {
     if (route?.key !== undefined && setParentPrevented !== undefined) {
-      // when route is defined (and setParentPrevented) it means we're in a nested stack
-      // route.key then will be the route key of parent
       setParentPrevented(parentId, route.key, isPrevented);
-      return () => {
-        setParentPrevented(parentId, route.key, false);
-      };
+      return () => setParentPrevented(parentId, route.key, false);
     }
 
     return undefined;

@@ -22,7 +22,7 @@ import { NavigationHelpersContext } from './NavigationHelpersContext';
 import { NavigationMetaContext } from './NavigationMetaContext';
 import { NavigationRouteContext } from './NavigationProvider';
 import { NavigationStateContext } from './NavigationStateContext';
-import { PreventRemoveProvider } from './PreventRemoveProvider';
+import { type IsRoutePrevented, PreventRemoveProvider } from './PreventRemoveProvider';
 import { Screen } from './Screen';
 import { UnhandledActionContext } from './UnhandledActionContext';
 import { deepFreeze } from './deepFreeze';
@@ -739,13 +739,23 @@ export function useNavigationBuilder<
 
   const { keyedListeners, addKeyedListener } = useKeyedChildListeners();
 
+  // The provider renders below the action handler, so context cannot be consumed here. The ref
+  // lets the handler query the provider synchronously while dispatching an action.
+  const isRoutePreventedRef = React.useRef<IsRoutePrevented>(() => false);
+  const isRoutePrevented = React.useCallback(
+    (routeKey: string) => isRoutePreventedRef.current(routeKey),
+    []
+  );
+
   const onAction = useOnAction({
     router,
     getState,
     setState,
     key: route?.key,
     actionListeners: childListeners.action,
+    preventRemoveListeners: keyedListeners.preventRemove,
     beforeRemoveListeners: keyedListeners.beforeRemove,
+    isRoutePrevented,
     routerConfigOptions: {
       routeNames,
       routeParamList,
@@ -803,7 +813,6 @@ export function useNavigationBuilder<
     // @ts-expect-error: this should have both core and custom events, but too much work right now
     emitter,
   });
-
   useCurrentRender({
     state,
     navigation,
@@ -826,7 +835,9 @@ export function useNavigationBuilder<
         <NavigationHelpersContext.Provider value={navigation}>
           <NavigationStateListenerProvider state={state}>
             <FocusedRouteKeyContext.Provider value={state.routes[state.index]!.key}>
-              <PreventRemoveProvider>{element}</PreventRemoveProvider>
+              <PreventRemoveProvider isRoutePreventedRef={isRoutePreventedRef}>
+                {element}
+              </PreventRemoveProvider>
             </FocusedRouteKeyContext.Provider>
           </NavigationStateListenerProvider>
         </NavigationHelpersContext.Provider>

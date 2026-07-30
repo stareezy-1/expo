@@ -24,6 +24,7 @@ import {
 } from '../../react-navigation/native';
 import { ExperimentalStackView } from './ExperimentalStackView';
 import type {
+  ExperimentalStackDescriptorMap,
   ExperimentalStackNavigationEventMap,
   ExperimentalStackNavigationOptions,
   ExperimentalStackNavigationProp,
@@ -62,7 +63,13 @@ function ExperimentalStackNavigator({
 
   const mergedDescriptors = useMemo(
     // TODO(@ubax): implement properly when more stack options are available
-    () => mergeOptions(descriptors as NativeStackDescriptorMap, registry, state),
+    // `mergeOptions` only changes options, so the experimental descriptor event type is preserved.
+    () =>
+      mergeOptions(
+        descriptors as NativeStackDescriptorMap,
+        registry,
+        state
+      ) as unknown as ExperimentalStackDescriptorMap,
     [descriptors, registry, state]
   );
 
