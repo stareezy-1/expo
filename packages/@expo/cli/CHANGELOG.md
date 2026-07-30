@@ -21,6 +21,9 @@
 - Fix opening web from the Terminal UI when the dev server was started without `--web` ([#48236](https://github.com/expo/expo/pull/48236) by [@ramonclaudio](https://github.com/ramonclaudio))
 - Ignore an invalid `--port` or an out-of-range `RCT_METRO_PORT` and start on the preferred port instead of prompting to use port `null` ([#48300](https://github.com/expo/expo/pull/48300) by [@ramonclaudio](https://github.com/ramonclaudio))
 - Resolve the signed-in username for partner provisioned actors so Expo Go can verify the account match ([#48354](https://github.com/expo/expo/pull/48354) by [@davidko604](https://github.com/davidko604))
+- Preserve loader `Cache-Control` headers in development and default header-less loader responses to `no-store` ([#48087](https://github.com/expo/expo/pull/48087) by [@hassankhan](https://github.com/hassankhan))
+- Default header-less SSG loader files and their pages to `public, max-age=0, must-revalidate` ([#48087](https://github.com/expo/expo/pull/48087) by [@hassankhan](https://github.com/hassankhan))
+- Write a `no-store` `pageHeaders` rule for loader paths into server export manifests ([#48087](https://github.com/expo/expo/pull/48087) by [@hassankhan](https://github.com/hassankhan))
 
 ### 💡 Others
 

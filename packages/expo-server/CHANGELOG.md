@@ -13,6 +13,7 @@
 ### 🐛 Bug fixes
 
 - Support web apps exported using SDK 55 ([#48351](https://github.com/expo/expo/pull/48351) by [@hassankhan](https://github.com/hassankhan))
+- Apply `pageHeaders` rules to loader responses, matched on the `/_expo/loaders/*` request path ([#48087](https://github.com/expo/expo/pull/48087) by [@hassankhan](https://github.com/hassankhan))
 
 ### 💡 Others
 
