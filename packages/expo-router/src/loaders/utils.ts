@@ -35,7 +35,7 @@ export function bumpDevLoaderRevision() {
  * @see import('packages/@expo/cli/src/start/server/metro/createServerRouteMiddleware.ts').createRouteHandlerMiddleware
  * @see import('packages/expo-server/src/vendor/environment/common.ts').createEnvironment
  */
-export async function fetchLoader(routePath: string): Promise<any> {
+export async function fetchLoader(routePath: string, signal?: AbortSignal): Promise<any> {
   let loaderPath = getLoaderModulePath(routePath);
   if (__DEV__ && devLoaderCacheRevision > 0) {
     loaderPath += `${loaderPath.includes('?') ? '&' : '?'}_expo_loader_v=${devLoaderCacheRevision}`;
@@ -45,6 +45,7 @@ export async function fetchLoader(routePath: string): Promise<any> {
     headers: {
       Accept: 'application/json',
     },
+    signal,
   });
   if (!response.ok) {
     throw new Error(`Failed to fetch loader data: ${response.status}`);

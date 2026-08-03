@@ -88,7 +88,65 @@ describe(LoaderClient, () => {
     });
   });
 
+  describe('abandon', () => {
+    it('aborts the in-flight fetch of an abandoned pending load', () => {
+      const client = new LoaderClient();
+      let signal: AbortSignal | undefined;
+      const fetcher = jest.fn((_path: string, s?: AbortSignal) => {
+        signal = s;
+        return new Promise<never>(() => {});
+      });
+
+      client.subscribeLoader('/p');
+      client.execute('/p', fetcher);
+      client.suspense.set('/p', new Promise(() => {}));
+      expect(signal).toBeDefined();
+      expect(signal!.aborted).toBe(false);
+
+      client.abandon('/p');
+
+      expect(signal!.aborted).toBe(true);
+      expect(client.suspense.get('/p')).toBeUndefined();
+    });
+  });
+
   describe('teardown', () => {
+    it('aborts an in-flight fetch when the last subscriber leaves', async () => {
+      const client = new LoaderClient();
+      let signal: AbortSignal | undefined;
+      const fetcher = jest.fn((_path: string, s?: AbortSignal) => {
+        signal = s;
+        return new Promise<never>(() => {});
+      });
+
+      const unsubscribe = client.subscribeLoader('/p');
+      client.execute('/p', fetcher);
+      expect(signal!.aborted).toBe(false);
+
+      unsubscribe();
+      await tick();
+
+      expect(signal!.aborted).toBe(true);
+    });
+
+    it('does not abort when a subscriber returns within the teardown grace', async () => {
+      const client = new LoaderClient();
+      let signal: AbortSignal | undefined;
+      const fetcher = jest.fn((_path: string, s?: AbortSignal) => {
+        signal = s;
+        return new Promise<never>(() => {});
+      });
+
+      const unsubscribe = client.subscribeLoader('/p');
+      client.execute('/p', fetcher);
+
+      unsubscribe();
+      client.subscribeLoader('/p');
+      await tick();
+
+      expect(signal!.aborted).toBe(false);
+    });
+
     it('tears down a disposed entry after the last unsubscribe', async () => {
       const client = new LoaderClient();
       client.suspense.set('/p', { data: 'v1' });

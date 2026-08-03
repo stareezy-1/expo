@@ -6,7 +6,7 @@ import type { ReactNavigationState } from '../global-state/types';
 import { LoaderSuspenseStore } from './LoaderSuspenseStore';
 import { bumpDevLoaderRevision } from './utils';
 
-type LoaderFetcher = (path: string) => Promise<unknown>;
+type LoaderFetcher = (path: string, signal?: AbortSignal) => Promise<unknown>;
 type LoaderResult = { data: unknown } | { error: unknown };
 type LoaderSubscriber = (result: LoaderResult) => void;
 
@@ -14,6 +14,7 @@ interface LoaderSource {
   subscribers: Set<LoaderSubscriber>;
   fetching: boolean;
   ending: boolean;
+  controller: AbortController | null;
 }
 
 export class LoaderClient {
@@ -48,7 +49,7 @@ export class LoaderClient {
   subscribeLoader(path: string, callback: LoaderSubscriber = () => {}): () => void {
     let source = this.active.get(path);
     if (!source) {
-      source = { subscribers: new Set(), fetching: false, ending: false };
+      source = { subscribers: new Set(), fetching: false, ending: false, controller: null };
       this.active.set(path, source);
     }
     source.ending = false;
@@ -99,6 +100,7 @@ export class LoaderClient {
     const source = this.active.get(path);
     if (entry instanceof Promise) {
       if (source) {
+        source.controller?.abort();
         this.active.delete(path);
       }
     } else if (source && source.subscribers.size > 0) {
@@ -122,7 +124,9 @@ export class LoaderClient {
     }
 
     source.fetching = true;
-    fetcherFn(path).then(
+    const controller = new AbortController();
+    source.controller = controller;
+    fetcherFn(path, controller.signal).then(
       (data) => this.settle(path, source, { data }),
       (error) =>
         this.settle(path, source, {
@@ -167,6 +171,7 @@ export class LoaderClient {
     source.ending = true;
     queueMicrotask(() => {
       if (source.ending && source.subscribers.size === 0 && this.active.get(path) === source) {
+        source.controller?.abort();
         this.active.delete(path);
         this.suspense.teardown(path);
       }
@@ -175,6 +180,7 @@ export class LoaderClient {
 
   private settle(path: string, source: LoaderSource, result: LoaderResult) {
     source.fetching = false;
+    source.controller = null;
     if (this.active.get(path) === source) {
       this.suspense.set(path, result);
     }

@@ -144,7 +144,7 @@ describe(useLoaderData, () => {
       wrapper: ClientWrapper,
     });
     expect(fetchLoaderMock).toHaveBeenCalledTimes(1);
-    expect(fetchLoaderMock).toHaveBeenCalledWith('/index');
+    expect(fetchLoaderMock).toHaveBeenCalledWith('/index', expect.any(AbortSignal));
   });
 
   it('retrieves fresh data from `fetchLoaderModule()`', async () => {
@@ -166,7 +166,7 @@ describe(useLoaderData, () => {
       wrapper: ClientWrapper,
     });
 
-    expect(fetchLoaderMock).toHaveBeenCalledWith('/users/123');
+    expect(fetchLoaderMock).toHaveBeenCalledWith('/users/123', expect.any(AbortSignal));
 
     await act(async () => {
       await fetchLoaderMock.mock.results[0]!.value;
