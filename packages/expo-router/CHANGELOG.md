@@ -35,6 +35,7 @@
 - Consume server-injected loader hydration data once instead of persisting it ([#48087](https://github.com/expo/expo/pull/48087) by [@hassankhan](https://github.com/hassankhan))
 - Allow error boundaries to retry failed loader fetches ([#48087](https://github.com/expo/expo/pull/48087) by [@hassankhan](https://github.com/hassankhan))
 - Refresh mounted routes in place on dev loader invalidation instead of resetting them to their Suspense fallbacks ([#48087](https://github.com/expo/expo/pull/48087) by [@hassankhan](https://github.com/hassankhan))
+- Abandon in-flight loader requests and abort when navigation is cancelled
 
 ### 💡 Others
 
