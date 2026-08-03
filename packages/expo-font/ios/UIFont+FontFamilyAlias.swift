@@ -11,16 +11,25 @@ public extension UIFont {
     // Get font names from the original function.
     let fontNames = UIFont._expo_fontNames(forFamilyName: familyName)
 
-    // If no font names were found, let's try with the alias.
-    if fontNames.isEmpty, let postScriptName = FontFamilyAliasManager.familyName(forAlias: familyName) {
-      let fontNames = UIFont._expo_fontNames(forFamilyName: postScriptName)
-
-      // If we still don't find any font names, we can assume it was not a family name but a font name.
-      // In that case we can safely return the original font name.
-      if fontNames.isEmpty {
-        return [postScriptName]
+    // If no font names were found, the name may be an alias rather than a family name encoded in a
+    // font binary, so resolve it against the PostScript names that were loaded under it.
+    if fontNames.isEmpty, let aliasedFontNames = FontFamilyAliasManager.fontNames(forAlias: familyName) {
+      // Only a variable font stored more than one name: ``fontNames(inFileAt:alias:)`` records one
+      // per named instance for those, and a single name for every other file. Handing the whole set
+      // back is what lets RN match `fontWeight` against the weights the font really has.
+      if aliasedFontNames.count > 1 {
+        return aliasedFontNames
       }
-      return fontNames
+
+      guard let postScriptName = aliasedFontNames.first else {
+        return fontNames
+      }
+
+      // Every other font keeps the original lookup. The PostScript name is tried as a family name
+      // first, so fonts registered under that family elsewhere stay reachable through the alias,
+      // and the name itself is returned when it isn't a family name.
+      let familyFontNames = UIFont._expo_fontNames(forFamilyName: postScriptName)
+      return familyFontNames.isEmpty ? [postScriptName] : familyFontNames
     }
 
     return fontNames

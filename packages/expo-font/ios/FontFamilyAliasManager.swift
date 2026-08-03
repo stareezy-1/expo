@@ -1,9 +1,10 @@
 import ExpoModulesCore
 
 /**
- A registry of font family aliases mapped to their real font family names.
+ A registry of font family aliases mapped to the PostScript names they were loaded from.
+ A static font contributes a single name, whereas a variable font contributes one per named instance.
  */
-private var fontFamilyAliases = [String: String]()
+private var fontFamilyAliases = [String: [String]]()
 
 /**
  A flag that is set to `true` when the ``UIFont.fontNames(forFamilyName:)`` is already swizzled.
@@ -29,20 +30,20 @@ internal struct FontFamilyAliasManager {
   }
 
   /**
-   Sets the alias for the given family name.
-   If the alias has already been set, its family name will be overridden.
+   Sets the alias for the given PostScript names.
+   If the alias has already been set, its font names will be overridden.
    */
-  internal static func setAlias(_ familyNameAlias: String, forFont font: String) {
+  internal static func setAlias(_ familyNameAlias: String, forFonts fontNames: [String]) {
     maybeSwizzleUIFont()
     queue.sync(flags: .barrier) {
-      fontFamilyAliases[familyNameAlias] = font
+      fontFamilyAliases[familyNameAlias] = fontNames
     }
   }
 
   /**
-   Returns the family name for the given alias or `nil` when it's not set yet.
+   Returns the PostScript names for the given alias or `nil` when it's not set yet.
    */
-  internal static func familyName(forAlias familyNameAlias: String) -> String? {
+  internal static func fontNames(forAlias familyNameAlias: String) -> [String]? {
     return queue.sync {
       fontFamilyAliases[familyNameAlias]
     }

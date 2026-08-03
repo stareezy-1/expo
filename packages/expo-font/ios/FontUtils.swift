@@ -9,41 +9,85 @@ internal func queryCustomNativeFonts() -> [String] {
     return []
   }
 
-  // [1] Get font family names for each font file
-  let fontFamilies: [[String]] = fontFilePaths.compactMap { fontFilePath in
-    guard let fontUrl = Bundle.main.url(forResource: fontFilePath, withExtension: nil) else {
-      return []
+  // [1] Get font family names for each font file. A variable font file has one descriptor per named
+  // instance of its variation axes, and they all share a family name, so the family names are
+  // deduplicated to avoid looking up — and returning — the same family once per instance.
+  var fontFamilyNames = [String]()
+
+  for fontFilePath in fontFilePaths {
+    guard let fontUrl = Bundle.main.url(forResource: fontFilePath, withExtension: nil),
+      let fontDescriptors = CTFontManagerCreateFontDescriptorsFromURL(fontUrl as CFURL) as? [CTFontDescriptor] else {
+      continue
     }
-    guard let fontDescriptors = CTFontManagerCreateFontDescriptorsFromURL(fontUrl as CFURL) as? [CTFontDescriptor] else {
-      return []
-    }
-    return fontDescriptors.compactMap { descriptor in
-      return CTFontDescriptorCopyAttribute(descriptor, kCTFontFamilyNameAttribute) as? String
+    for descriptor in fontDescriptors {
+      guard let fontFamilyName = CTFontDescriptorCopyAttribute(descriptor, kCTFontFamilyNameAttribute) as? String else {
+        continue
+      }
+      if !fontFamilyNames.contains(fontFamilyName) {
+        fontFamilyNames.append(fontFamilyName)
+      }
     }
   }
 
   // [2] Retrieve font names by family names
-  return fontFamilies.flatMap { fontFamilyNames in
-    return fontFamilyNames.flatMap { fontFamilyName in
-    #if os(iOS) || os(tvOS)
-      return UIFont.fontNames(forFamilyName: fontFamilyName)
-    #elseif os(macOS)
-      return NSFontManager.shared.availableMembers(ofFontFamily: fontFamilyName)?.compactMap { $0[0] as? String } ?? []
-    #endif
-    }
+  return fontFamilyNames.flatMap { fontFamilyName in
+  #if os(iOS) || os(tvOS)
+    return UIFont.fontNames(forFamilyName: fontFamilyName)
+  #elseif os(macOS)
+    return NSFontManager.shared.availableMembers(ofFontFamily: fontFamilyName)?.compactMap { $0[0] as? String } ?? []
+  #endif
   }
 }
 
 /**
- Loads the font from the given url and returns it as ``CGFont``.
+ Returns the PostScript names to register an alias for, for the file at the given url.
+
+ A variable font file exposes each of the named instances of its variation axes under its own
+ PostScript name, and returning all of them is what lets React Native match `fontWeight` against
+ the weights the font actually provides. Core Text does that expansion when the font is registered,
+ so the axes don't need to be read out of the font binary.
+
+ The file's default instance comes first, matching how ``UIFont.fontNames(forFamilyName:)`` orders
+ a family. React Native falls back to the first name when no font matches the requested traits —
+ an italic style against a font with only upright instances, for example — so the first name has to
+ be the default weight rather than whichever instance Core Text happened to list first.
+
+ Every other file resolves to the single name of its default font, which leaves the alias behaving
+ as it did before variable fonts were handled: ``UIFont/_expo_fontNames(forFamilyName:)`` looks that
+ name up as a family name, so fonts registered elsewhere under the same family stay reachable
+ through the alias. A font collection takes this path too. It holds several fonts but declares no
+ variation axes, and widening it here would change what already-shipped apps render.
  */
-internal func loadFont(fromUrl url: CFURL, alias: String) throws -> CGFont {
-  guard let provider = CGDataProvider(url: url),
-    let cgFont = CGFont(provider) else {
+internal func fontNames(inFileAt url: CFURL, alias: String) throws -> [String] {
+  guard let fontDescriptors = CTFontManagerCreateFontDescriptorsFromURL(url) as? [CTFontDescriptor] else {
     throw FontCreationFailedException(alias)
   }
 
-  return cgFont
+  var fontNames = fontDescriptors.compactMap { descriptor in
+    return CTFontDescriptorCopyAttribute(descriptor, kCTFontNameAttribute) as? String
+  }
+
+  if fontNames.isEmpty {
+    throw FontNoPostScriptException(alias)
+  }
+
+  // ``CGFont`` reports the default instance of a variable font, which is the one to move up front.
+  let defaultFontName = CGDataProvider(url: url).flatMap { CGFont($0)?.postScriptName as String? }
+
+  let hasVariationAxes = fontDescriptors.contains { descriptor in
+    let axes = CTFontDescriptorCopyAttribute(descriptor, kCTFontVariationAxesAttribute) as? [Any]
+    return !(axes?.isEmpty ?? true)
+  }
+
+  if hasVariationAxes, fontNames.count > 1 {
+    if let defaultFontName, let defaultIndex = fontNames.firstIndex(of: defaultFontName) {
+      fontNames.remove(at: defaultIndex)
+      fontNames.insert(defaultFontName, at: 0)
+    }
+    return fontNames
+  }
+
+  return [defaultFontName ?? fontNames[0]]
 }
 
 /**
@@ -76,11 +120,11 @@ internal func unregisterFont(url: CFURL) throws -> Bool {
 
   if !CTFontManagerUnregisterFontsForURL(url, .process, &error), let error = error?.takeRetainedValue() {
     if let ctFontManagerError = CTFontManagerError(rawValue: CFErrorGetCode(error as CFError)) {
-      switch ctFontManagerError {
+      return switch ctFontManagerError {
       case .systemRequired, .inUse:
-        return false
+        false
       case .notRegistered:
-        return true
+        true
       default:
         throw UnregisteringFontFailedException(error)
       }
