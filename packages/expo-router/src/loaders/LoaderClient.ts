@@ -1,5 +1,8 @@
 import { createContext } from 'react';
 
+import { routeInfoSubscribe } from '../global-state/routeInfoCache';
+import { store } from '../global-state/store';
+import type { ReactNavigationState } from '../global-state/types';
 import { LoaderSuspenseStore } from './LoaderSuspenseStore';
 import { bumpDevLoaderRevision } from './utils';
 
@@ -16,6 +19,7 @@ interface LoaderSource {
 export class LoaderClient {
   private active = new Map<string, LoaderSource>();
   private fetchers = new Map<string, LoaderFetcher>();
+  private routeKeys = new Map<string, string>();
   private version = 0;
   private listeners = new Set<() => void>();
 
@@ -61,6 +65,46 @@ export class LoaderClient {
         this.scheduleTeardown(path, source);
       }
     };
+  }
+
+  trackRoute(path: string, routeKey: string) {
+    this.routeKeys.set(path, routeKey);
+  }
+
+  onNavigationStateChange(state: ReactNavigationState | undefined) {
+    const presentKeys = new Set<string>();
+    const walk = (node: ReactNavigationState | undefined) => {
+      for (const route of node?.routes ?? []) {
+        if (route.key) {
+          presentKeys.add(route.key);
+        }
+        walk(route.state);
+      }
+    };
+    walk(state);
+
+    for (const [path, routeKey] of this.routeKeys) {
+      if (!presentKeys.has(routeKey)) {
+        this.abandon(path);
+      }
+    }
+  }
+
+  abandon(path: string) {
+    this.routeKeys.delete(path);
+    const entry = this.suspense.get(path);
+    if (entry === undefined) {
+      return;
+    }
+    const source = this.active.get(path);
+    if (entry instanceof Promise) {
+      if (source) {
+        this.active.delete(path);
+      }
+    } else if (source && source.subscribers.size > 0) {
+      return;
+    }
+    this.suspense.clear(path);
   }
 
   registerFetcher(path: string, fetcher: LoaderFetcher) {
@@ -115,6 +159,7 @@ export class LoaderClient {
   clear() {
     this.active.clear();
     this.fetchers.clear();
+    this.routeKeys.clear();
     this.suspense.reset();
   }
 
@@ -142,6 +187,12 @@ export class LoaderClient {
 
 export const defaultLoaderClient = new LoaderClient();
 export const LoaderClientContext = createContext<LoaderClient>(defaultLoaderClient);
+
+if (typeof window !== 'undefined') {
+  routeInfoSubscribe(() => {
+    defaultLoaderClient.onNavigationStateChange(store.state);
+  });
+}
 
 // On `loader-invalidate`, drop any unconsumed server-injected data, bump the dev revision so
 // refetches bypass the platform cache, and refresh live readers in place.

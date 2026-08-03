@@ -215,6 +215,60 @@ describe(useLoaderData, () => {
     }>();
   });
 
+  it('abandons an in-flight load when navigation removes its route, so a revisit refetches', async () => {
+    const fetchLoaderMock = fetchLoader as jest.MockedFunction<typeof fetchLoader>;
+    const resolvers: ((value: unknown) => void)[] = [];
+    fetchLoaderMock.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolvers.push(resolve);
+        })
+    );
+
+    renderRouter(
+      {
+        index: () => <Text testID="home">Home</Text>,
+        slow: function SlowRoute() {
+          return (
+            <React.Suspense fallback={<Text testID="fallback">Loading</Text>}>
+              <SlowScreen />
+            </React.Suspense>
+          );
+        },
+      },
+      { initialUrl: '/' }
+    );
+    jest.useRealTimers();
+
+    function SlowScreen() {
+      const data = useLoaderData();
+      return <Text testID="slow">{JSON.stringify(data)}</Text>;
+    }
+
+    // Navigate to the slow route: the read misses, fetch #1 starts, the screen suspends.
+    act(() => router.push('/slow'));
+    expect(fetchLoaderMock).toHaveBeenCalledTimes(1);
+
+    // The user navigates away before the fetch settles: the load is abandoned.
+    act(() => router.back());
+
+    // The orphaned fetch settles.
+    await act(async () => {
+      resolvers[0]!('stale');
+    });
+
+    // A later visit must consult the platform cache again, not adopt the abandoned result.
+    act(() => router.push('/slow'));
+    expect(fetchLoaderMock).toHaveBeenCalledTimes(2);
+
+    // This jest environment never replays a suspended render after its promise resolves, so the
+    // delivered result is asserted on the store rather than the rendered output.
+    await act(async () => {
+      resolvers[1]!('fresh');
+    });
+    expect(defaultLoaderClient.suspense.get('/slow')).toEqual({ data: 'fresh' });
+  });
+
   it('resolves loader data for non-focused tab route', () => {
     globalThis.__EXPO_ROUTER_LOADER_DATA__ = {
       '/index': { tab: 'home' },

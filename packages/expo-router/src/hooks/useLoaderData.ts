@@ -55,6 +55,17 @@ export function useLoaderData<T extends LoaderFunction<any> = any>(): LoaderFunc
     return searchString ? `${resolvedPathname}?${searchString}` : resolvedPathname;
   }, [contextKey, stateForPath]);
 
+  const routeKey = useMemo(() => {
+    let key: string | undefined;
+    let state = stateForPath;
+    while (state) {
+      const route = state.routes[state.routes.length - 1];
+      key = route?.key ?? key;
+      state = route?.state;
+    }
+    return key;
+  }, [stateForPath]);
+
   useEffect(() => {
     // Hydration-seeded routes never reach a read miss, so invalidation can't refetch them
     // without a registered fetcher.
@@ -69,6 +80,10 @@ export function useLoaderData<T extends LoaderFunction<any> = any>(): LoaderFunc
   // First invocation of this hook will happen server-side, so we look up the loaded data from context
   if (serverDataLoaderContext) {
     return serverDataLoaderContext[resolvedPath];
+  }
+
+  if (routeKey) {
+    loaderClient.trackRoute(resolvedPath, routeKey);
   }
 
   // The second invocation happens after the client has hydrated, so we seed the suspense store
