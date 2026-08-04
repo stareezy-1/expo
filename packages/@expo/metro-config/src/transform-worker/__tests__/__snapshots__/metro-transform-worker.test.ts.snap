@@ -39,20 +39,18 @@ exports[`transforms a module with dependencies 1`] = `
 
 exports[`transforms a simple module 1`] = `
 {
-  "mappings": "AAA,IC;CDG",
+  "mappings": "AAA",
   "names": [
     "<global>",
-    "__d$argument_0",
   ],
 }
 `;
 
 exports[`transforms a simple script 1`] = `
 {
-  "mappings": "AAA,CC;CDE",
+  "mappings": "AAA",
   "names": [
     "<global>",
-    "<anonymous>",
   ],
 }
 `;
